@@ -1,0 +1,1374 @@
+# 450 Fishing Game - Design Documentation
+
+## Table of Contents
+1. [Class Diagram and Descriptions](#class-diagram-and-descriptions)
+2. [Process Flow Chart](#process-flow-chart)
+
+---
+
+## Class Diagram and Descriptions
+
+### Class Identification
+
+The fishing game is built using the following core classes:
+
+#### **Core System Classes (Autoloaded Singletons)**
+1. **GameState** - Global game state manager
+2. **DatabaseManager** - SQLite database handler
+3. **ShopUI** - Shop interface and commerce system
+
+#### **Gameplay Classes**
+4. **Player** - Player character controller
+5. **FishingSystem** - Fishing mechanics and minigame
+6. **FishingUI** - Fishing interface display
+
+#### **World Classes**
+7. **WaterArea** - Defines fishable water zones
+
+#### **Pet Classes (Inheritance Hierarchy)**
+8. **Octopet** - Ocean-themed pet companion
+9. **Pengpet** - Penguin-themed pet companion
+
+---
+
+### Class Details
+
+---
+
+#### 1. GameState (extends Node)
+**Purpose:** Centralized management of all game state data and player progression.
+
+**Attributes:**
+- `current_save_id: int`
+- `player_name: String`
+- `current_scene: String`
+- `player_level: int`
+- `player_experience: int`
+- `player_gold: int`
+- `fish_caught: int`
+- `total_playtime: int`
+- `player_position: Vector2`
+- `legendary_fish_chance_bonus: int`
+- `owned_pets: Array[String]`
+- `equipped_pet: String`
+
+**Methods:**
+- `load_game_state(save_data: Dictionary) -> void`
+- `save_game_state() -> void`
+- `create_new_game(save_name: String, p_name: String) -> void`
+- `add_experience(amount: int) -> void`
+- `add_gold(amount: int) -> void`
+- `increment_fish_caught() -> void`
+- `check_level_up() -> void`
+- `reset_game_state() -> void`
+
+**Signals:**
+- `game_saved()`
+- `game_loaded()`
+
+**Relationships:**
+- Uses: DatabaseManager (for save/load operations)
+- Used by: ShopUI, FishingSystem, Player, DatabaseManager
+
+**Design Justification:**
+- Autoloaded as singleton for global access from any scene
+- Centralizes state management to avoid data inconsistency
+- Acts as single source of truth for player data
+- Facilitates save/load system integration
+
+---
+
+#### 2. DatabaseManager (extends Node)
+**Purpose:** Manages all persistent data storage using SQLite database.
+
+**Attributes:**
+- `db: SQLite`
+- `db_name: String`
+
+**Methods:**
+- `initialize_database() -> void`
+- `create_tables() -> void`
+- `create_save(save_name: String, player_name: String) -> int`
+- `update_save(save_id: int, save_data: Dictionary) -> bool`
+- `load_save(save_id: int) -> Dictionary`
+- `get_all_saves() -> Array`
+- `delete_save(save_id: int) -> void`
+- `add_fish_to_collection(save_id: int, fish_data: Dictionary) -> void`
+- `get_fish_collection(save_id: int) -> Array`
+- `delete_fish_from_collection(collection_id: int) -> void`
+- `save_settings(settings_data: Dictionary) -> void`
+- `load_settings() -> Dictionary`
+- `close_database() -> void`
+
+**Signals:**
+- `database_ready()`
+- `save_completed(save_id: int)`
+- `save_loaded(save_data: Dictionary)`
+- `database_error(error_message: String)`
+
+**Database Tables:**
+- `game_saves`
+- `player_inventory`
+- `fish_collection`
+- `quests`
+- `game_settings`
+
+**Relationships:**
+- Used by: GameState, ShopUI, FishingSystem
+- Provides data persistence service to all game systems
+
+**Design Justification:**
+- Autoloaded singleton for consistent database access
+- Separates data persistence from game logic
+- Uses SQLite for reliable local storage
+- Foreign key constraints ensure data integrity
+- Extensible design allows for future features
+
+---
+
+#### 3. ShopUI (extends CanvasLayer)
+**Purpose:** Manages the in-game shop interface, item purchasing, and pet management.
+
+**Attributes:**
+- `shop_screen: Control`
+- `is_open: bool`
+- `money_label: Label`
+- `current_section: String`
+- `sell_fish_container: VBoxContainer`
+- `upgrades_container: VBoxContainer`
+- `pets_container: VBoxContainer`
+- `spawned_pet: Node`
+- `shop_upgrades: Array[Dictionary]`
+- `shop_pets: Array[Dictionary]`
+
+**Methods:**
+- `setup_shop() -> void`
+- `create_shop_item(item: Dictionary, is_pet: bool) -> Panel`
+- `create_tab_button(tab_name: String, parent: HBoxContainer) -> void`
+- `switch_section(section: String) -> void`
+- `update_money_display() -> void`
+- `buy_item(item: Dictionary) -> void`
+- `purchase_pet(pet: Dictionary) -> void`
+- `equip_pet(pet_name: String) -> void`
+- `unequip_pet(pet_name: String) -> void`
+- `refresh_pets_ui() -> void`
+- `spawn_pet(pet_name: String) -> void`
+- `apply_upgrade(upgrade: Dictionary) -> void`
+- `toggle_shop() -> void`
+- `load_fish_inventory() -> void`
+- `create_fish_item(fish: Dictionary) -> Panel`
+- `sell_fish(fish: Dictionary) -> void`
+
+**Relationships:**
+- Uses: GameState (for player gold, pets, upgrades)
+- Uses: DatabaseManager (for fish collection queries)
+- Spawns: Octopet, Pengpet (dynamically loads and instantiates pet scenes)
+
+**Design Justification:**
+- CanvasLayer ensures UI renders above game world
+- Process mode ALWAYS allows shop to function when game is paused
+- Dynamic button states (Buy/Equip/Unequip) provide clear feedback
+- Tabbed interface organizes different shop functions
+- Directly integrates with GameState for data consistency
+- Spawns pets dynamically by loading scenes
+
+---
+
+#### 4. Player (extends CharacterBody2D)
+**Purpose:** Controls player character movement, animations, and fishing interactions.
+
+**Attributes:**
+- `speed: float`
+- `animated_sprite: AnimatedSprite2D`
+- `fishing_system: Node`
+- `fishing_ui: CanvasLayer`
+- `is_fishing: bool`
+- `facing_direction: int`
+- `last_vertical_direction: int`
+- `in_water_area: bool`
+
+**Methods:**
+- `_physics_process(delta: float) -> void`
+- `handle_movement() -> void`
+- `update_animation() -> void`
+- `_input(event: InputEvent) -> void`
+- `toggle_fishing() -> void`
+- `_on_water_area_entered(area: Area2D) -> void`
+- `_on_water_area_exited(area: Area2D) -> void`
+- `_on_fishing_ended() -> void`
+- `_on_fish_caught(fish_data: Dictionary) -> void`
+- `_on_fish_escaped() -> void`
+
+**Animations:**
+- `walk_up`
+- `walk_down`
+- `walk_side`
+- `fishing`
+
+**Relationships:**
+- Uses: FishingSystem (to start fishing, catch fish)
+- Uses: FishingUI (to display fishing status)
+- Interacts with: WaterArea (collision detection for fishing zones)
+- Followed by: Octopet, Pengpet
+
+**Design Justification:**
+- CharacterBody2D provides built-in physics and collision
+- Separates movement logic from fishing logic
+- Signal-based communication with FishingSystem avoids tight coupling
+- Input handling prioritizes minigame input during fishing
+- Animation system uses single "side" animation with flip for efficiency
+- Left-click cancel provides intuitive exit from fishing
+
+---
+
+#### 5. FishingSystem (extends Node)
+**Purpose:** Core fishing mechanics including bite timing, minigame, and fish generation.
+
+**Attributes:**
+- `cast_range: float`
+- `bite_time_min: float`
+- `bite_time_max: float`
+- `catch_window: float`
+- `minigame_sequence_length: int`
+- `minigame_time_limit: float`
+- `fish_types: Array[Dictionary]`
+- `is_fishing: bool`
+- `waiting_for_bite: bool`
+- `fish_hooked_active: bool`
+- `current_fish: Dictionary`
+- `minigame_active: bool`
+- `key_sequence: Array`
+- `current_key_index: int`
+- `bite_timer: Timer`
+- `catch_timer: Timer`
+- `minigame_timer: Timer`
+
+**Methods:**
+- `setup_timers() -> void`
+- `start_fishing() -> bool`
+- `end_fishing() -> void`
+- `stop_fishing() -> void`
+- `attempt_catch() -> bool`
+- `start_minigame() -> void`
+- `check_key_input(action: String) -> bool`
+- `complete_minigame_success() -> void`
+- `fail_minigame() -> void`
+- `generate_fish_data() -> Dictionary`
+- `select_random_fish() -> Dictionary`
+- `get_fish_catalog() -> Array[Dictionary]`
+- `_on_bite_timer_timeout() -> void`
+- `_on_catch_timer_timeout() -> void`
+- `_on_minigame_timeout() -> void`
+
+**Signals:**
+- `fishing_started()`
+- `fish_hooked(fish_data: Dictionary)`
+- `fish_caught(fish_data: Dictionary)`
+- `fish_escaped()`
+- `fishing_ended()`
+- `minigame_started(sequence: Array)`
+- `minigame_key_pressed(correct: bool, progress: int, total: int)`
+- `minigame_failed()`
+
+**Fish Rarity System:**
+- **Common (60%)**: Bass, Trout
+- **Uncommon (25%)**: Snapper
+- **Rare (13%)**: Tuna
+- **Legendary (2% + bonuses)**: Goldfish
+
+**Relationships:**
+- Used by: Player (controls fishing flow)
+- Uses: GameState (to update fish caught, XP, gold)
+- Uses: DatabaseManager (to save caught fish)
+- Communicates with: FishingUI (via signals)
+
+**Design Justification:**
+- Node-based design allows attachment to any scene
+- Signal-driven architecture decouples fishing logic from UI
+- Timer-based events create suspense and challenge
+- Minigame adds skill-based gameplay element
+- Rarity system creates progression incentive
+- Legendary bonuses from shop create meaningful upgrades
+- State machine pattern (is_fishing, waiting_for_bite, fish_hooked_active, minigame_active) prevents invalid transitions
+- Random fish generation creates variety in catches
+
+---
+
+#### 6. FishingUI (extends CanvasLayer)
+**Purpose:** Displays fishing status, prompts, and minigame interface.
+
+**Attributes:**
+- `fishing_system: Node`
+- `status_label: Label`
+- `minigame_container: Control`
+- `key_display: Label`
+- `progress_label: Label`
+
+**Methods:**
+- `set_fishing_system(system: Node) -> void`
+- `_on_fishing_started() -> void`
+- `_on_fish_hooked(fish_data: Dictionary) -> void`
+- `_on_minigame_started(sequence: Array) -> void`
+- `_on_minigame_key_pressed(correct: bool, progress: int, total: int) -> void`
+- `_on_fish_caught(fish_data: Dictionary) -> void`
+- `_on_fish_escaped() -> void`
+- `_on_fishing_ended() -> void`
+- `show_catch_screen(fish_data: Dictionary) -> void`
+- `hide_ui() -> void`
+
+**Relationships:**
+- Uses: FishingSystem (listens to signals for state updates)
+- Used by: Player (to display fishing status)
+
+**Design Justification:**
+- CanvasLayer renders UI above game world
+- Signal-based updates ensure UI stays synchronized with game state
+- Separate from FishingSystem for modularity
+- "You Caught!" screens provide satisfying feedback
+- Visual feedback for each minigame key press
+
+---
+
+#### 7. WaterArea (extends Area2D)
+**Purpose:** Defines zones where fishing is allowed and provides water visual effects.
+
+**Attributes:**
+- `water_sprite: ColorRect`
+- `time: float`
+- `base_color: Color`
+- `highlight_color: Color`
+
+**Methods:**
+- `_ready() -> void`
+- `_process(delta: float) -> void`
+
+**Visual Effects:**
+- Multi-frequency wave patterns
+- Shimmer and sparkle effects
+- Color transitions for depth
+- Gentle position offset for movement
+
+**Additional Components:**
+- **StaticBody2D blocker** - Prevents player from entering water physically
+
+**Relationships:**
+- Interacts with: Player (collision detection for fishing zones)
+- Blocks player movement via StaticBody2D child node
+
+**Design Justification:**
+- Area2D for collision detection with player
+- Collision layer 2 dedicated to water zones
+- Visual feedback shows fishable areas
+- Animated effects make water feel alive
+- Separate visual effects from gameplay logic
+- StaticBody2D prevents player from walking into water while maintaining fishing detection
+
+---
+
+#### 8. Octopet (extends CharacterBody2D)
+**Purpose:** Pet companion that follows the player with ocean theme.
+
+**Attributes:**
+- `follow_speed: float`
+- `follow_distance: float`
+- `player: CharacterBody2D`
+- `animated_sprite: AnimatedSprite2D`
+
+**Methods:**
+- `_ready() -> void`
+- `find_player() -> void`
+- `_physics_process(delta: float) -> void`
+
+**Animation Logic:**
+- Follows player when too far away
+- Stops and idles when close enough
+- Flips horizontally based on movement direction
+- Plays "walk" animation when moving
+
+**Relationships:**
+- Follows: Player (finds via group "player")
+- Spawned by: ShopUI (when equipped)
+
+**Design Justification:**
+- CharacterBody2D for physics-based movement
+- Group-based player finding avoids hard references
+- call_deferred() prevents initialization timing issues
+- Scale (0.3) makes pet appropriately sized
+
+---
+
+#### 9. Pengpet (extends CharacterBody2D)
+**Purpose:** Pet companion that follows the player with penguin theme.
+
+**Attributes:**
+- `follow_speed: float`
+- `follow_distance: float`
+- `player: CharacterBody2D`
+- `animated_sprite: AnimatedSprite2D`
+
+**Methods:**
+- `_ready() -> void`
+- `find_player() -> void`
+- `_physics_process(delta: float) -> void`
+
+**Animation Logic:**
+- Identical behavior to Octopet
+- Different sprite and scale (0.23) for size matching
+
+**Relationships:**
+- Follows: Player (finds via group "player")
+- Spawned by: ShopUI (when equipped)
+
+**Design Justification:**
+- Reuses proven Octopet architecture for consistency
+- Different scale compensates for taller sprite dimensions
+- Smaller collision radius (8.0) for more accurate hitbox
+
+---
+
+### Class Relationships
+
+#### Inheritance Hierarchy
+```
+Node
+├── GameState (Autoload Singleton)
+├── DatabaseManager (Autoload Singleton)
+├── FishingSystem
+└── WaterArea (extends Area2D)
+
+CanvasLayer
+├── ShopUI (Autoload Singleton)
+└── FishingUI
+
+CharacterBody2D
+├── Player
+├── Octopet
+└── Pengpet
+```
+
+#### Associations and Dependencies
+
+**GameState:**
+- Used by: `ShopUI`, `FishingSystem`, `Player`, `DatabaseManager`
+- Relationship: Global state access (singleton pattern)
+
+**DatabaseManager:**
+- Used by: `GameState`, `ShopUI`, `FishingSystem`
+- Relationship: Data persistence service (singleton pattern)
+
+**ShopUI:**
+- Uses: `GameState`, `DatabaseManager`
+- Spawns: `Octopet`, `Pengpet`
+- Relationship: Manages pet lifecycle
+
+**Player:**
+- Uses: `FishingSystem`, `FishingUI`
+- Detected by: `WaterArea`, `Octopet`, `Pengpet`
+- Relationship: Controls fishing flow, provides follow target for pets
+
+**FishingSystem:**
+- Used by: `Player`
+- Communicates with: `FishingUI`, `GameState`, `DatabaseManager`
+- Relationship: Core fishing logic provider
+
+**FishingUI:**
+- Uses: `FishingSystem`
+- Relationship: Visual representation of fishing state
+
+**WaterArea:**
+- Interacts with: `Player`
+- Relationship: Triggers fishing availability and blocks entry
+
+**Octopet & Pengpet:**
+- Follows: `Player`
+- Spawned by: `ShopUI`
+- Relationship: Autonomous companion entities
+
+#### Communication Patterns
+
+**Signal-Based Communication:**
+- `FishingSystem` → `FishingUI`: fishing state changes
+- `FishingSystem` → `Player`: fishing completion
+- `DatabaseManager` → `GameState`: save/load events
+- `WaterArea` → `Player`: area entry/exit
+
+**Direct Method Calls:**
+- `Player` → `FishingSystem`: start_fishing(), attempt_catch(), check_key_input()
+- `ShopUI` → `GameState`: property access for gold, pets, upgrades
+- `FishingSystem` → `DatabaseManager`: add_fish_to_collection()
+- `ShopUI` → `DatabaseManager`: get_fish_collection(), delete_fish_from_collection()
+
+**Singleton Access:**
+- All classes can access `GameState`, `DatabaseManager`, `ShopUI` globally
+
+---
+
+### Design Justifications
+
+#### 1. Singleton Pattern for Core Systems
+**Why:** GameState, DatabaseManager, and ShopUI are autoloaded singletons.
+**Justification:**
+- Ensures single source of truth for game state
+- Provides global access without passing references
+- Persists across scene changes
+- Simplifies save/load system integration
+
+#### 2. Signal-Driven Architecture
+**Why:** Heavy use of signals for inter-class communication.
+**Justification:**
+- Decouples classes, improving maintainability
+- Allows multiple listeners without modifying emitter
+- Prevents circular dependencies
+- Makes code more testable
+
+#### 3. Separation of Logic and Presentation
+**Why:** FishingSystem (logic) separate from FishingUI (presentation).
+**Justification:**
+- Allows logic to function without UI (testing, headless mode)
+- UI can be redesigned without touching game logic
+- Multiple UIs could represent same system
+- Follows single responsibility principle
+
+#### 4. Component-Based Pet System
+**Why:** Pets are separate nodes spawned/destroyed dynamically.
+**Justification:**
+- Pets only exist when equipped, saving resources
+- Easy to add new pet types without modifying shop
+- Pets can be independently updated
+- Supports future multi-pet system
+
+#### 5. Timer-Based Fishing Mechanics
+**Why:** Timers for bite, catch window, and minigame.
+**Justification:**
+- Creates suspense and challenge
+- Easy to balance by adjusting timer values
+- Non-blocking, allows smooth gameplay
+- Clear timeout conditions
+
+#### 6. Database for Persistence
+**Why:** SQLite database instead of JSON/binary files.
+**Justification:**
+- Relational structure for complex data (fish collection, inventory)
+- SQL queries for filtering and aggregation
+- Data integrity with foreign keys
+- Scalable for future features (achievements, leaderboards)
+
+#### 7. Rarity-Based Fish System
+**Why:** Tiered rarity with upgrade bonuses.
+**Justification:**
+- Creates progression incentive
+- Rare catches feel rewarding
+- Shop upgrades have meaningful impact
+- Easy to balance by adjusting percentages
+
+#### 8. Water Area Collision Blocking
+**Why:** StaticBody2D added to water areas.
+**Justification:**
+- Prevents unrealistic water walking
+- Maintains fishing detection via Area2D
+- Forces strategic positioning for fishing
+- More realistic game world interaction
+
+---
+
+## Process Flow Chart
+
+### 1. Game Startup Flow
+
+```
+┌─────────────────┐
+│   Game Start    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Load Autoload   │
+│   Singletons    │
+│  - GameState    │
+│  - Database     │
+│  - ShopUI       │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Initialize     │
+│   Database      │
+│ Create Tables   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Load Title    │
+│     Screen      │
+└────────┬────────┘
+         │
+         ▼
+    ┌────────┐
+    │ Player │
+    │ Choice │
+    └───┬────┘
+        │
+   ┌────┴────┐
+   │         │
+   ▼         ▼
+┌──────┐  ┌──────────┐
+│ New  │  │   Load   │
+│ Game │  │   Game   │
+└──┬───┘  └────┬─────┘
+   │           │
+   │           ▼
+   │      ┌──────────────┐
+   │      │ Query Saves  │
+   │      │ from Database│
+   │      └──────┬───────┘
+   │             │
+   │             ▼
+   │      ┌──────────────┐
+   │      │ Select Save  │
+   │      └──────┬───────┘
+   │             │
+   │             ▼
+   │      ┌──────────────┐
+   │      │ Load Save    │
+   │      │     Data     │
+   │      └──────┬───────┘
+   │             │
+   └──────┬──────┘
+          │
+          ▼
+   ┌──────────────┐
+   │ Load Main    │
+   │ Game Scene   │
+   └──────────────┘
+```
+
+**Annotations:**
+- Autoload singletons persist across all scenes
+- Database initialized once on startup
+- Title screen provides entry point for player choice
+- New Game creates save entry in database
+- Load Game queries existing saves and loads selected one
+- Both paths converge to main game scene
+
+---
+
+### 2. Fishing Process Flow
+
+```
+┌──────────────────┐
+│  Player Enters   │
+│   Water Area     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ WaterArea Detects│
+│ Player Collision │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│   Set Player     │
+│ in_water_area =  │
+│      true        │
+└────────┬─────────┘
+         │
+         ▼
+    ┌────────┐
+    │ Player │  NO
+    │Blocked │───────► [Cannot Enter]
+    │by Water│         [Water]
+    │Collider│
+    └───┬────┘
+        │YES (at edge)
+        ▼
+┌──────────────────┐
+│ Player Presses   │
+│     SPACE        │
+└────────┬─────────┘
+         │
+         ▼
+    ┌────────┐
+    │Is in   │  NO
+    │water?  ├─────► [Do Nothing]
+    └───┬────┘
+        │YES
+        ▼
+┌──────────────────┐
+│ Start Fishing    │
+│ System           │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Set is_fishing  │
+│    = true        │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Play Fishing     │
+│   Animation      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Start Bite Timer │
+│ (Random 2-8s)    │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Show "Waiting    │
+│ for bite..." UI  │
+└────────┬─────────┘
+         │
+         ▼
+    ┌────────┐
+    │ Timer  │
+    │Expires │
+    └───┬────┘
+        │
+        ▼
+┌──────────────────┐
+│  Fish Bites!     │
+│ Select Random    │
+│      Fish        │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Calculate Rarity │
+│  (60% Common,    │
+│  25% Uncommon,   │
+│  13% Rare,       │
+│  2%+ Legendary)  │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Show "Press      │
+│ SPACE to reel!"  │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Start Catch      │
+│  Timer (1.5s)    │
+└────────┬─────────┘
+         │
+    ┌────┴─────┐
+    │          │
+    ▼          ▼
+┌─────────┐ ┌──────────┐
+│ Player  │ │  Timer   │
+│ Presses │ │ Expires  │
+│  SPACE  │ │    OR    │
+│   OR    │ │Left Click│
+│L-Click  │ │          │
+└────┬────┘ └────┬─────┘
+     │           │
+     │           ▼
+     │      ┌──────────┐
+     │      │   Fish   │
+     │      │  Escapes │
+     │      └────┬─────┘
+     │           │
+     │           ▼
+     │      ┌──────────┐
+     │      │   End    │
+     │      │ Fishing  │
+     │      └──────────┘
+     │
+     ▼
+┌──────────────────┐
+│ Start Minigame   │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Generate Random  │
+│  5-Key Sequence  │
+│   (W/A/S/D)      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Show Key         │
+│   Sequence       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Start Minigame   │
+│  Timer (5s)      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Player Presses   │
+│      Key         │
+└────────┬─────────┘
+         │
+         ▼
+    ┌────────┐
+    │Correct │  NO
+    │  Key?  ├─────────┐
+    └───┬────┘         │
+        │YES           │
+        ▼              ▼
+┌──────────────┐  ┌──────────┐
+│  Increment   │  │ Minigame │
+│   Progress   │  │  Failed  │
+└──────┬───────┘  └────┬─────┘
+       │               │
+       ▼               │
+  ┌────────┐           │
+  │All Keys│  NO       │
+  │  Done? ├───────────┤
+  └───┬────┘           │
+      │YES             │
+      ▼                ▼
+┌──────────────┐  ┌──────────┐
+│   Success!   │  │   Fish   │
+│ Generate Fish│  │  Escapes │
+│     Data     │  └────┬─────┘
+└──────┬───────┘       │
+       │               │
+       ▼               │
+┌──────────────┐       │
+│ Add Fish to  │       │
+│  Database    │       │
+└──────┬───────┘       │
+       │               │
+       ▼               │
+┌──────────────┐       │
+│ Increment    │       │
+│ Fish Caught  │       │
+└──────┬───────┘       │
+       │               │
+       ▼               │
+┌──────────────┐       │
+│   Add XP     │       │
+│              │       │
+└──────┬───────┘       │
+       │               │
+       ▼               │
+┌──────────────┐       │
+│ Show "You    │       │
+│  Caught!"    │       │
+│   Screen     │       │
+└──────┬───────┘       │
+       │               │
+       └───────┬───────┘
+               │
+               ▼
+        ┌──────────────┐
+        │ End Fishing  │
+        │  Session     │
+        └──────────────┘
+```
+
+**Annotations:**
+- Water area collision enables fishing capability but blocks entry
+- Player must stand at water's edge to fish
+- Bite timer creates anticipation
+- Catch window (1.5s) requires quick reflexes
+- Minigame adds skill-based challenge
+- Wrong key immediately fails minigame
+- Fish data persisted to database on success
+- Left-click at any point cancels fishing
+
+---
+
+### 3. Shop System Flow
+
+```
+┌──────────────────┐
+│ Player Presses E │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│   Toggle Shop    │
+│     Visibility   │
+└────────┬─────────┘
+         │
+         ▼
+    ┌────────┐
+    │ Shop   │  NO
+    │ Open?  ├─────► [Hide Shop, Unpause]
+    └───┬────┘
+        │YES
+        ▼
+┌──────────────────┐
+│  Show Shop UI    │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│   Pause Game     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Update Gold      │
+│    Display       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Load Fish from   │
+│    Database      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Player Selects  │
+│      Tab         │
+└────────┬─────────┘
+         │
+    ┌────┴─────┐
+    │          │
+    ▼          ▼
+┌─────────┐ ┌──────────┐
+│  Sell   │ │ Upgrades │
+│  Fish   │ │   Tab    │
+└────┬────┘ └────┬─────┘
+     │           │
+     │           ▼
+     │      ┌──────────────┐
+     │      │ Player Clicks│
+     │      │     Buy      │
+     │      └──────┬───────┘
+     │             │
+     │             ▼
+     │        ┌────────┐
+     │        │Enough  │  NO
+     │        │ Gold?  ├─────► [Show Error]
+     │        └───┬────┘
+     │            │YES
+     │            ▼
+     │      ┌──────────────┐
+     │      │ Deduct Gold  │
+     │      └──────┬───────┘
+     │             │
+     │             ▼
+     │      ┌──────────────┐
+     │      │Apply Upgrade │
+     │      │  (e.g. +2%   │
+     │      │  Legendary)  │
+     │      └──────┬───────┘
+     │             │
+     │             ▼
+     │      ┌──────────────┐
+     │      │Update Display│
+     │      └──────────────┘
+     │
+     ▼
+┌──────────────┐
+│ Player Clicks│
+│     Sell     │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  Add Gold    │
+│ (Fish Value) │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ Delete Fish  │
+│from Database │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ Refresh Fish │
+│     List     │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│Update Display│
+└──────────────┘
+```
+
+**Annotations:**
+- E key toggles shop visibility
+- Shop pauses game for player focus
+- Tabs organize different shop functions
+- Gold check prevents overspending
+- Upgrades immediately affect GameState
+- Fish selling removes from database permanently
+- Dynamic UI updates reflect changes instantly
+
+---
+
+### 4. Pet Management Flow
+
+```
+┌──────────────────┐
+│  Player Opens    │
+│   Shop (E key)   │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Select Pets Tab │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Show Available  │
+│      Pets        │
+│  (Octopet,       │
+│   Pengpet)       │
+└────────┬─────────┘
+         │
+         ▼
+    ┌────────┐
+    │  Pet   │  YES
+    │ Owned? ├─────────────┐
+    └───┬────┘             │
+        │NO                │
+        ▼                  ▼
+┌──────────────┐    ┌─────────────┐
+│ Show "Buy"   │    │    Show     │
+│   Button     │    │ "Equip" or  │
+│   (Green)    │    │ "Unequip"   │
+└──────┬───────┘    └──────┬──────┘
+       │                   │
+       ▼                   │
+┌──────────────┐           │
+│ Player Clicks│           │
+│     Buy      │           │
+└──────┬───────┘           │
+       │                   │
+       ▼                   │
+  ┌────────┐               │
+  │Enough  │  NO           │
+  │ Gold?  ├─────► [Error] │
+  └───┬────┘               │
+      │YES                 │
+      ▼                    │
+┌──────────────┐           │
+│ Deduct Gold  │           │
+└──────┬───────┘           │
+       │                   │
+       ▼                   │
+┌──────────────┐           │
+│  Add Pet to  │           │
+│ owned_pets[] │           │
+└──────┬───────┘           │
+       │                   │
+       ▼                   │
+┌──────────────┐           │
+│ Change Button│           │
+│  to "Equip"  │           │
+└──────┬───────┘           │
+       │                   │
+       └───────┬───────────┘
+               │
+               ▼
+        ┌──────────────┐
+        │ Player Clicks│
+        │    Equip     │
+        └──────┬───────┘
+               │
+               ▼
+          ┌────────┐
+          │Another │  YES
+          │  Pet   ├─────────┐
+          │Equipped│         │
+          └───┬────┘         │
+              │NO            ▼
+              │       ┌─────────────┐
+              │       │Unequip Other│
+              │       │     Pet     │
+              │       └──────┬──────┘
+              │              │
+              └──────┬───────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │Set equipped │
+              │  pet name   │
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │  Load Pet   │
+              │    Scene    │
+              │ (.tscn file)│
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │ Instantiate │
+              │  Pet Node   │
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │  Add Pet to │
+              │ Game Scene  │
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │   Pet Finds │
+              │    Player   │
+              │ (via group) │
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │Pet Positions│
+              │  Near Player│
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │Pet Begins   │
+              │  Following  │
+              │   Player    │
+              └──────┬──────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │Change Button│
+              │ to "Unequip"│
+              │   (Orange)  │
+              └─────────────┘
+
+
+┌──────────────────┐
+│ Player Clicks    │
+│    Unequip       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Clear equipped   │
+│    pet name      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Remove Pet Node │
+│   from Scene     │
+│  (queue_free)    │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Change Button    │
+│  to "Equip"      │
+│     (Blue)       │
+└──────────────────┘
+```
+
+**Annotations:**
+- Pet ownership is permanent after purchase
+- Only one pet can be equipped at a time
+- Equipping spawns pet scene dynamically
+- Pet uses group system to find player autonomously
+- Unequipping destroys pet node to save resources
+- Button color indicates state (Green=Buy, Blue=Equip, Orange=Unequip)
+- Pet remains owned after unequipping for re-equipping later
+
+---
+
+### 5. Save/Load Flow
+
+```
+┌──────────────────┐
+│   Player Takes   │
+│     Action       │
+│ (Catch Fish,     │
+│  Buy Item, etc.) │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│   Update Game    │
+│      State       │
+│  (GameState.*)   │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Call GameState   │
+│ .save_game_      │
+│    state()       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Build save_data │
+│   Dictionary     │
+│  {gold: 500,     │
+│   level: 3, ...} │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Call Database    │
+│ Manager.update   │
+│    _save()       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Execute SQL     │
+│ UPDATE query     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Set last_       │
+│   modified       │
+│  timestamp       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Emit game_saved()│
+│     Signal       │
+└──────────────────┘
+
+
+┌──────────────────┐
+│  Player Selects  │
+│  "Load Game"     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Query Database   │
+│ for All Saves    │
+│ (SELECT *)       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Display Save    │
+│      List        │
+│ (sorted by date) │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Player Clicks    │
+│      Save        │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Call Database    │
+│ Manager.load_    │
+│   save(id)       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Execute SQL     │
+│ SELECT query     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Return save_    │
+│  data Dictionary │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Call GameState   │
+│ .load_game_      │
+│  state(data)     │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Set GameState   │
+│   properties     │
+│ (gold, level,    │
+│  position, etc.) │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Emit game_       │
+│  loaded()        │
+│     Signal       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Change Scene to  │
+│   Main Game      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Restore Player  │
+│    Position      │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│   Apply Loaded   │
+│      State       │
+│  (UI, stats)     │
+└──────────────────┘
+```
+
+**Annotations:**
+- Auto-save occurs after significant game events
+- Save data stored as relational database records
+- Timestamps allow sorting saves by recency
+- Load restores all player progress
+- Scene change preserves GameState (singleton)
+- Player position restored for seamless continuation
+
+---
+
+### Decision Points Summary
+
+| Decision Point | Options | Logic |
+|----------------|---------|-------|
+| **In water area?** | Yes / No | Determines if fishing can start |
+| **Blocked by water?** | Yes / No | StaticBody2D prevents entry |
+| **Fish bite timer** | 2-8 seconds | Random anticipation period |
+| **Space pressed in time?** | Yes / No | Catch window success |
+| **Minigame key correct?** | Yes / No | Validate against sequence |
+| **All keys completed?** | Yes / No | Minigame success |
+| **Enough gold?** | Yes / No | Purchase validation |
+| **Pet owned?** | Yes / No | Show Buy vs Equip |
+| **Another pet equipped?** | Yes / No | Unequip before equipping new |
+| **Fish rarity roll** | 0.0-1.0 | Determines fish type |
+
+---
+
+## Conclusion
+
+This design documentation provides a comprehensive overview of the 450 Fishing Game's architecture, including:
+
+- **9 core classes** with detailed attributes, methods, and justifications
+- **Clear relationship diagrams** showing inheritance and associations
+- **5 complete process flowcharts** covering all major game systems
+- **Decision point analysis** for key game mechanics
+- **Design pattern justifications** explaining architectural choices
+
+The architecture prioritizes:
+- **Modularity**: Separate concerns for maintainability
+- **Scalability**: Easy to add new features (fish, pets, upgrades)
+- **Persistence**: Robust save/load system with SQLite
+- **Decoupling**: Signal-based communication for flexibility
+- **Player Experience**: Engaging mechanics with clear feedback
+- **Realism**: Water collision blocking for immersive gameplay
+
+This documentation serves as a comprehensive guide for understanding, maintaining, and extending the fishing game codebase.
