@@ -1,4 +1,3 @@
-# fishing-game-project
 # Fishing Game Project 🎣
 
 ## Overview
